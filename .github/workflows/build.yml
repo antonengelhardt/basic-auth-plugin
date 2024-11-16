@@ -1,0 +1,336 @@
+name: Test, Build and Deploy basic-auth-plugin
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo-deny:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/antonengelhardt/rust-docker-tools
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Rust version
+        run: rustc --version && cargo --version
+
+      - name: Cargo Deny
+        uses: EmbarkStudios/cargo-deny-action@v1
+
+  clippy:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/antonengelhardt/rust-docker-tools
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Rust version
+        run: rustc --version && cargo --version
+
+      - name: Clippy
+        run: cargo clippy --release --all-targets --target=wasm32-wasip1 -- -D warnings
+
+  fmt:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/antonengelhardt/rust-docker-tools
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Rust version
+        run: rustc --version && cargo --version
+
+      - name: Fmt
+        run: cargo fmt -- --check
+
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/antonengelhardt/rust-docker-tools
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Rust version
+        run: rustc --version && cargo --version
+
+      - name: Test
+        run: cargo test --workspace
+
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/antonengelhardt/rust-docker-tools
+    needs: [cargo-deny, clippy, fmt, test]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build basic-auth-plugin
+        run: |
+          cargo build --target wasm32-wasip1 --release
+
+      - name: Upload plugin as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin
+          path: target/wasm32-wasi/release/basic_auth_plugin.wasm
+
+  docker-image:
+    needs: [cargo-deny, clippy, fmt, test]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Pull previous image to cache
+        run: docker pull antonengelhardt/basic-auth-plugin:latest
+
+      - name: Push to Docker Hub
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          push: true
+          tags: antonengelhardt/basic-auth-plugin:latest
+
+  ghcr-image:
+    runs-on: ubuntu-latest
+    needs: [cargo-deny, clippy, fmt, test]
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        run: |
+          docker pull ghcr.io/antonengelhardt/basic-auth-plugin:latest # Pull the image to cache
+          docker build -t ghcr.io/antonengelhardt/basic-auth-plugin:latest .
+          docker push ghcr.io/antonengelhardt/basic-auth-plugin:latest
+
+  deploy-demo:
+    needs: ghcr-image
+    environment: demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions-hub/kubectl@master
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        with:
+          args: rollout restart deployment basic-auth-plugin -n basic-auth-plugin
+
+  # changelog-and-release:
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #       with:
+  #         ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+
+  #     - name: Exit if latest commit is release commit (to avoid infinite loop)
+  #       run: |
+  #         if git log -1 --pretty=%B | grep -q "chore(release): prepare for"; then
+  #           echo "Latest commit is a release commit, exiting..."
+  #           echo "EXIT=1" >> $GITHUB_ENV
+  #           exit 0
+  #         fi
+
+  #     - name: Get most recent merged PR and calculate the next tag
+  #       if: env.EXIT != '1'
+  #       id: get_pr
+  #       run: |
+  #         MOST_RECENTLY_MERGED_PR=$(curl -s -H 'Accept: application/vnd.github.v3+json' "https://api.github.com/repos/antonengelhardt/basic-auth-plugin/pulls?state=closed" | \
+  #         jq '[.[] | select(.merged_at != null)] | max_by(.merged_at)')
+  #         PR_NUMBER=$(echo $MOST_RECENTLY_MERGED_PR | jq -r '.number')
+
+  #         LABELS=$(curl -s -H 'Accept: application/vnd.github.v3+json' "https://api.github.com/repos/antonengelhardt/basic-auth-plugin/issues/$PR_NUMBER" | jq -r '.labels[].name')
+
+  #         # Set SEMVER_BUMP based on the presence of labels
+  #         if [[ $LABELS == *"major"* ]]; then
+  #           SEMVER_BUMP="major"
+  #         elif [[ $LABELS == *"minor"* ]]; then
+  #           SEMVER_BUMP="minor"
+  #         elif [[ $LABELS == *"bug"* ]]; then
+  #           SEMVER_BUMP="patch"
+  #         elif [[ $LABELS == *"patch"* ]]; then
+  #           SEMVER_BUMP="patch"
+  #         else
+  #           SEMVER_BUMP="none"
+  #           echo "EXIT=1" >> $GITHUB_ENV
+  #           exit 0 # exit if no labels are found, which means no version bump is required
+  #         fi
+
+  #         # Output the SEMVER_BUMP value
+  #         echo "SEMVER_BUMP is set to: $SEMVER_BUMP"
+
+  #         # LATEST_TAG=$(git describe --tags --abbrev=0)
+  #         LATEST_TAG=$(curl "https://api.github.com/repos/antonengelhardt/basic-auth-plugin/tags" | jq -r '.[0].name')
+
+  #         # Function to bump version numbers
+  #         bump_version() {
+  #             local IFS=.
+  #             local -a parts=($1)
+
+  #             case "$2" in
+  #                 major)
+  #                     ((parts[0]++))
+  #                     parts[1]=0
+  #                     parts[2]=0
+  #                     ;;
+  #                 minor)
+  #                     ((parts[1]++))
+  #                     parts[2]=0
+  #                     ;;
+  #                 patch)
+  #                     ((parts[2]++))
+  #                     ;;
+  #                 *)
+  #                     echo "Error: Unknown version bump type '$2'"
+  #                     exit 1
+  #                     ;;
+  #             esac
+
+  #             echo "${parts[0]}.${parts[1]}.${parts[2]}"
+  #         }
+
+  #         current_version=${LATEST_TAG:1}
+
+  #         # Bump the version based on the SEMVER_BUMP
+  #         new_version=$(bump_version "$current_version" "$SEMVER_BUMP")
+  #         echo "VERSION=$new_version" >> $GITHUB_ENV
+
+  #         # Append 'v' prefix if required to maintain the same version format
+  #         NEW_TAG="v$new_version"
+  #         echo "New tag after bump is: $NEW_TAG"
+  #         echo "NEW_TAG=$NEW_TAG" >> $GITHUB_ENV
+
+  #     - name: Bump Version on Cargo.toml
+  #       if: env.EXIT != '1'
+  #       run: sed -i "s/^version = \".*\"/version = \"${{ env.VERSION }}\"/" Cargo.toml
+
+  #     - name: Git Cliff
+  #       if: env.EXIT != '1'
+  #       id: generate_changelog
+  #       uses: orhun/git-cliff-action@v3
+  #       with:
+  #         config: cliff.toml
+  #         args: -l --prepend CHANGELOG.md --strip header
+  #       env:
+  #         GITHUB_REPO: ${{ github.repository }}
+
+  #     - name: sed [unreleased] with new version in CHANGELOG.md
+  #       if: env.EXIT != '1'
+  #       run: sed -i "s/\[unreleased\]/${{ env.NEW_TAG }}/" CHANGELOG.md
+
+  #     - name: sed [unreleased] with new version in RELEASE_NOTES.md
+  #       if: env.EXIT != '1'
+  #       run: |
+  #         cat ${{ steps.generate_changelog.outputs.changelog }} > RELEASE_NOTES.md
+  #         sed -i "s/\[unreleased\]/${{ env.NEW_TAG }}/" RELEASE_NOTES.md
+
+  #     - name: Print Changelog
+  #       if: env.EXIT != '1'
+  #       run: cat ${{ steps.generate_changelog.outputs.changelog }} && echo "##" && cat CHANGELOG.md
+
+  #     - name: Commit Version and CHANGELOG.md
+  #       if: env.EXIT != '1'
+  #       run: |
+  #         git checkout origin/main
+  #         git config user.name "github-actions[bot]"
+  #         git config user.email "github-actions[bot]@users.noreply.github.com"
+  #         set +e
+  #         git add Cargo.toml CHANGELOG.md
+  #         cargo check
+  #         git add Cargo.lock
+  #         git commit -m "chore(release): prepare for ${{ env.NEW_TAG }}"
+  #         git push origin HEAD:main
+
+  #     - name: Create a tag on main
+  #       if: env.EXIT != '1'
+  #       run: |
+  #         git checkout origin/main
+
+  #         git config user.email "github-actions[bot]@users.noreply.github.com"
+  #         git config user.name "github-actions[bot]"
+
+  #         git tag ${{ env.NEW_TAG }}
+
+  #         git push origin ${{ env.NEW_TAG }}
+
+  #     - name: Create Release
+  #       uses: actions/create-release@v1
+  #       if: env.EXIT != '1'
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       with:
+  #         tag_name: ${{ env.NEW_TAG }}
+  #         release_name: ${{ env.NEW_TAG }}
+  #         body_path: RELEASE_NOTES.md
+  #         draft: false
+  #         prerelease: false

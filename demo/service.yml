@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: basic-auth-plugin-service
+  namespace: basic-auth-plugin
+spec:
+  ports:
+    - name: http
+      port: 443
+      protocol: TCP
+      targetPort: 10000
+  selector:
+    app: basic-auth-plugin
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin-service
+  namespace: basic-auth-plugin
+spec:
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: httpbin

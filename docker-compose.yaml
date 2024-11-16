@@ -1,0 +1,32 @@
+version: "3.8"
+
+services:
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    hostname: envoy
+    ports:
+      - "10000:10000"
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml
+      # - ./notes/configs/envoy-auth0.yaml:/etc/envoy/envoy.yaml
+      # - ./notes/configs/envoy-wwu.yaml:/etc/envoy/envoy.yaml
+      - ./target/wasm32-wasip1/release:/etc/envoy/proxy-wasm-plugins
+    networks:
+      - envoymesh
+    # Additional options:
+    # For debugging add this: --component-log-level wasm:debug
+    # If you want to test with 1 thread, add this: --concurrency 1
+    command: envoy -c /etc/envoy/envoy.yaml --concurrency 1 --component-log-level wasm:debug
+    # command: envoy -c /etc/envoy/envoy.yaml --concurrency 1
+    # command: envoy -c /etc/envoy/envoy.yaml --concurrency 5 --component-log-level wasm:debug
+    # command: envoy -c /etc/envoy/envoy.yaml --concurrency 5
+
+  httpbin:
+    image: kennethreitz/httpbin
+    hostname: httpbin
+    ports:
+      - "80:80"
+    networks:
+      - envoymesh
+networks:
+  envoymesh: {}

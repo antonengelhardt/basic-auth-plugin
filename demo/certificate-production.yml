@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: basic-auth-plugin-certificate
+  namespace: basic-auth-plugin
+spec:
+  secretName: basic-auth-plugin-tls
+  issuerRef:
+    name: letsencrypt-production
+    kind: ClusterIssuer
+  commonName: demo.basic-auth-plugin.ae02.de
+  dnsNames:
+    - demo.basic-auth-plugin.ae02.de

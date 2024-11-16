@@ -1,0 +1,39 @@
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+
+updates:
+  # This checks for minor and major version updates every week
+  - package-ecosystem: "cargo"
+    directory: "/"
+    labels:
+      - "dependencies"
+    schedule:
+      interval: "weekly"
+    reviewers:
+      - "antonengelhardt"
+    commit-message:
+      prefix: "chore(deps): "
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-patch"
+
+  # Patches are grouped together into one PR every month
+  # - package-ecosystem: "cargo"
+  #   directory: "/"
+  #   labels:
+  #     - "dependencies"
+  #   schedule:
+  #     interval: "monthly"
+  #   reviewers:
+  #     - "antonengelhardt"
+
+  #   # Group all patches into one PR
+  #   groups:
+  #     patches:
+  #       update-types:
+  #         - "patch"
