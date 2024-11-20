@@ -182,7 +182,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: plugin
-          path: target/wasm32-wasi/release/basic_auth_plugin.wasm
+          path: target/wasm32-wasip1/release/basic_auth_plugin.wasm
 
   docker-image:
     needs: [verify-project]
