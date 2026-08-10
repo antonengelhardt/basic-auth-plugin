@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 aes-gcm = { version = "0.10.3", features = ["std"] }
 
 # base64
-base64 = "0.22.1"
+base64 = "0.23.1"
 
 # logging
 log = "0.4.22"
