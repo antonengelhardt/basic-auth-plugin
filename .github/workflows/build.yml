@@ -1,4 +1,4 @@
-name: Test and Build basic-auth-plugin
+name: Build basic-auth-plugin
 
 on:
   push:
