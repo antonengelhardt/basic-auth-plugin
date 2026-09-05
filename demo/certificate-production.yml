@@ -8,6 +8,6 @@ spec:
   issuerRef:
     name: letsencrypt-production
     kind: ClusterIssuer
-  commonName: demo.basic-auth-plugin.ae02.de
+  commonName: basic-auth-plugin.ae02.de
   dnsNames:
-    - demo.basic-auth-plugin.ae02.de
+    - basic-auth-plugin.ae02.de
