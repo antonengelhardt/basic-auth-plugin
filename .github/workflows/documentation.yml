@@ -41,7 +41,7 @@ jobs:
           echo "<meta http-equiv=refresh content=0;url=basic_auth_plugin/index.html>" > target/doc/index.html
 
       - name: Upload documentation
-        uses: actions/upload-pages-artifact@v1
+        uses: actions/upload-pages-artifact@v5
         with:
           path: ./target/doc
 
