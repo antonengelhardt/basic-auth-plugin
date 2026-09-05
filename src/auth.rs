@@ -1,7 +1,7 @@
 // aes_gcm
 use aes_gcm::{
-    aead::{AeadMut, OsRng},
-    AeadCore, Aes256Gcm,
+    aead::{Aead, Generate, Nonce},
+    Aes256Gcm,
 };
 
 // base64
@@ -19,6 +19,7 @@ use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
 // std
+use std::convert::TryInto;
 use std::sync::Arc;
 
 /// This is the basic auth context
@@ -49,9 +50,8 @@ impl HttpContext for BasicAuthContext {
         let nonce = self.get_nonce();
 
         // If the session cookie and nonce are found, try to get the session from the cookie
-        if session_cookie.is_ok() && nonce.is_ok() {
-            match self
-                .get_session_from_cookie(session_cookie.unwrap().as_str(), nonce.unwrap().as_str())
+        if let (Ok(session_cookie), Ok(nonce)) = (session_cookie, nonce) {
+            match self.get_session_from_cookie(session_cookie.as_str(), nonce.as_str())
             {
                 Ok(username_password_combination) => {
                     // Check if the user is authorized
@@ -107,10 +107,10 @@ impl BasicAuthContext {
         username_password_combination: &UserPasswordCombination,
         redirect_to: Option<String>,
     ) {
-        let nonce = Aes256Gcm::generate_nonce(OsRng);
+        let nonce = Nonce::<Aes256Gcm>::generate();
         let encoded_nonce = BASE64.encode(nonce.as_slice());
 
-        let mut cipher = self.config.aes_key.reveal().clone();
+        let cipher = self.config.aes_key.reveal().clone();
         let encrypted_cookie = cipher
             .encrypt(
                 &nonce,
@@ -162,20 +162,23 @@ impl BasicAuthContext {
         cookie: &str,
         nonce: &str,
     ) -> Result<UserPasswordCombination, String> {
-        let mut cipher = self.config.aes_key.reveal().clone();
+        let cipher = self.config.aes_key.reveal().clone();
 
         let decoded_nonce = match BASE64.decode(nonce) {
             Ok(decoded_nonce) => decoded_nonce,
             Err(e) => return Err(format!("failed to decode nonce: {}", e)),
         };
-        let nonce = aes_gcm::Nonce::from_slice(decoded_nonce.as_slice());
+        let nonce: Nonce<Aes256Gcm> = decoded_nonce
+            .as_slice()
+            .try_into()
+            .map_err(|_| "invalid nonce length".to_string())?;
 
         let decoded_cookie = match BASE64.decode(cookie) {
             Ok(decoded_cookie) => decoded_cookie,
             Err(e) => return Err(format!("failed to decode cookie: {}", e)),
         };
 
-        let decrypted = match cipher.decrypt(nonce, decoded_cookie.as_slice()) {
+        let decrypted = match cipher.decrypt(&nonce, decoded_cookie.as_slice()) {
             Ok(decrypted) => decrypted,
             Err(e) => return Err(format!("failed to decrypt cookie: {}", e)),
         };
