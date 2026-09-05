@@ -51,8 +51,7 @@ impl HttpContext for BasicAuthContext {
 
         // If the session cookie and nonce are found, try to get the session from the cookie
         if let (Ok(session_cookie), Ok(nonce)) = (session_cookie, nonce) {
-            match self.get_session_from_cookie(session_cookie.as_str(), nonce.as_str())
-            {
+            match self.get_session_from_cookie(session_cookie.as_str(), nonce.as_str()) {
                 Ok(username_password_combination) => {
                     // Check if the user is authorized
                     if self.is_authorized(
