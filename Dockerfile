@@ -10,7 +10,7 @@ RUN cargo build --target=wasm32-wasip1 --release
 
 ##################################################
 
-FROM envoyproxy/envoy:v1.39-latest
+FROM envoyproxy/envoy:v1.40-latest
 
 COPY --from=builder /target/wasm32-wasip1/release/basic_auth_plugin.wasm /etc/envoy/proxy-wasm-plugins/basic_auth_plugin.wasm
 
